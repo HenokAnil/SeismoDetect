@@ -524,8 +524,13 @@
         </div>
     </div>
 
-    <!-- Local Plotly bundle (no CDN network drops!) -->
-    <script src="../../node_modules/plotly.js-dist-min/plotly.min.js"></script>
+    <!-- Plotly CDN with fallback -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script>
+        if (typeof Plotly === 'undefined') {
+            document.write('<script src="../../node_modules/plotly.js-dist-min/plotly.min.js"><\/script>');
+        }
+    </script>
     <script src="renderer.js"></script>
 </body>
 </html>

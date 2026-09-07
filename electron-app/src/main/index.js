@@ -64,7 +64,7 @@ ipcMain.handle('api:uploadFile', async (event, filePath) => {
     const formData = new FormData();
     formData.append('file', blob, fileName);
 
-    const response = await fetch('http://localhost:8000/upload', {
+    const response = await fetch('http://127.0.0.1:8000/upload', {
       method: 'POST',
       body: formData
     });
@@ -77,7 +77,11 @@ ipcMain.handle('api:uploadFile', async (event, filePath) => {
     const result = await response.json();
     return { success: true, data: result };
   } catch (err) {
-    return { success: false, error: err.message };
+    const detail = err.cause ? ` (${err.cause.message || err.cause})` : '';
+    return { 
+      success: false, 
+      error: `${err.message}${detail}. Ensure the FastAPI backend is running and ready on http://127.0.0.1:8000.` 
+    };
   }
 });
 

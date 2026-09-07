@@ -9,7 +9,8 @@ from typing import List, Optional
 
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Depends, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import obspy
@@ -44,6 +45,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve web frontend UI directly in any browser at /app/
+frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "electron-app", "src", "renderer"))
+if os.path.exists(frontend_dir):
+    app.mount("/app", StaticFiles(directory=frontend_dir, html=True), name="frontend")
 
 # Global model singletons (initialized on startup)
 detector_model: Optional[EQTransformerDetector] = None
@@ -112,11 +118,14 @@ class FetchRequest(BaseModel):
     source: str = "scedc"
 
 @app.get("/")
-def root():
+def root(request: Request):
+    if "text/html" in request.headers.get("accept", ""):
+        return RedirectResponse(url="/app/")
     return {
         "service": "SeismoDetect API",
         "version": "1.0.0",
         "status": "online",
+        "web_ui": "/app/",
         "features": ["Ingestion", "MinIO Storage", "Quality Analysis", "EQTransformer Picking", "Qdrant Embeddings", "PDF Reports"]
     }
 

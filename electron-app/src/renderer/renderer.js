@@ -38,8 +38,9 @@ let currentSignalId = null;
 let currentEventId = null;
 let currentWaveformData = null;
 
-const API_BASE = 'http://localhost:8000';
-const WS_BASE = 'ws://localhost:8000';
+const isLocalFile = window.location.protocol === 'file:';
+const API_BASE = isLocalFile ? 'http://127.0.0.1:8000' : window.location.origin;
+const WS_BASE = isLocalFile ? 'ws://127.0.0.1:8000' : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
 
 // Check backend connectivity
 async function checkBackend() {
@@ -294,25 +295,7 @@ function renderSimilarEvents(similarEvents) {
     `).join('');
 }
 
-// 1. Upload Button Handler
-uploadBtn.addEventListener('click', async () => {
-    statusText.innerText = 'Opening file selection dialog...';
-    const filePath = await window.electronAPI.openFile();
-    if (!filePath) {
-        statusText.innerText = 'File selection cancelled.';
-        return;
-    }
-
-    statusText.innerText = `Uploading ${filePath.split('\\').pop()} to MinIO...`;
-    const res = await window.electronAPI.uploadFile(filePath);
-
-    if (!res.success) {
-        statusText.innerText = `Error: ${res.error}`;
-        alert(`Upload Failed: ${res.error}`);
-        return;
-    }
-
-    const data = res.data;
+function handleUploadSuccess(data) {
     currentSignalId = data.signal_id;
     statusText.innerText = `Uploaded ${data.filename}. Initializing inference...`;
 
@@ -324,8 +307,70 @@ uploadBtn.addEventListener('click', async () => {
     valQuality.innerText = `${(data.quality.quality_score * 100).toFixed(0)}%`;
 
     // Load waveform & run WebSocket pipeline
-    await loadAndPlotWaveform(currentSignalId);
+    loadAndPlotWaveform(currentSignalId);
     runWebSocketInference(currentSignalId);
+}
+
+// Hidden HTML5 file input for standard web browser environments
+const webFileInput = document.createElement('input');
+webFileInput.type = 'file';
+webFileInput.accept = '.mseed';
+webFileInput.style.display = 'none';
+document.body.appendChild(webFileInput);
+
+webFileInput.addEventListener('change', async () => {
+    const file = webFileInput.files[0];
+    if (!file) return;
+
+    statusText.innerText = `Uploading ${file.name} to MinIO...`;
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+
+    try {
+        const response = await fetch(`${API_BASE}/upload`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Upload failed (Status ${response.status}): ${errText}`);
+        }
+
+        const data = await response.json();
+        handleUploadSuccess(data);
+    } catch (err) {
+        statusText.innerText = `Error: ${err.message}`;
+        alert(`Upload Failed: ${err.message}`);
+    } finally {
+        webFileInput.value = '';
+    }
+});
+
+// 1. Upload Button Handler (Supports both Electron and Web Browsers)
+uploadBtn.addEventListener('click', async () => {
+    if (window.electronAPI && typeof window.electronAPI.openFile === 'function') {
+        statusText.innerText = 'Opening file selection dialog...';
+        const filePath = await window.electronAPI.openFile();
+        if (!filePath) {
+            statusText.innerText = 'File selection cancelled.';
+            return;
+        }
+
+        statusText.innerText = `Uploading ${filePath.split('\\').pop()} to MinIO...`;
+        const res = await window.electronAPI.uploadFile(filePath);
+
+        if (!res.success) {
+            statusText.innerText = `Error: ${res.error}`;
+            alert(`Upload Failed: ${res.error}`);
+            return;
+        }
+
+        handleUploadSuccess(res.data);
+    } else {
+        // Fallback for regular web browser
+        webFileInput.click();
+    }
 });
 
 // 2. Demo Waveform Button Handler
