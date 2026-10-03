@@ -27,6 +27,7 @@ from backend.similarity.encoder import EmbeddingPipeline
 from backend.similarity.index import SimilarityIndex
 from backend.ingestion.clients import SCEDCClient, EIDAClient
 from backend.reports.generator import generate_pdf_report
+from backend.llm.explain import generate_explanation
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("seismodetect")
@@ -550,7 +551,7 @@ def run_ml_pipeline(signal_id: str, db: Session):
                 "time": payload.get("origin_time", "Catalog Reference")
             })
 
-    return {
+    output = {
         "event_id": str(new_event.id),
         "signal_id": str(sig.id),
         "origin_time": origin_time.isoformat(),
@@ -559,6 +560,11 @@ def run_ml_pipeline(signal_id: str, db: Session):
         "picks": picks_list,
         "similar_events": similar_results
     }
+    
+    # Generate optional LLM explanation
+    output["explanation"] = generate_explanation(output)
+    
+    return output
 
 @app.post("/infer/{signal_id}")
 async def run_inference(signal_id: str, db: Session = Depends(get_db)):
@@ -566,6 +572,9 @@ async def run_inference(signal_id: str, db: Session = Depends(get_db)):
     try:
         result = await asyncio.to_thread(run_ml_pipeline, signal_id, db)
         return {"status": "ok", "result": result}
+    except FileNotFoundError as e:
+        logger.error(f"Missing models: {e}")
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.error(f"Inference error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

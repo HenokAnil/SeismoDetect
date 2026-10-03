@@ -43,6 +43,26 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: seismodetect_backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - minio
+      - redis
+      - qdrant
+    environment:
+      - DATABASE_URL=postgresql://seismo_user:seismo_password@postgres:5432/seismodetect
+      - MINIO_ENDPOINT=minio:9000
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_HOST=qdrant
+    volumes:
+      - ./backend/models/checkpoints:/app/backend/models/checkpoints
+
 volumes:
   postgres_data:
   minio_data:

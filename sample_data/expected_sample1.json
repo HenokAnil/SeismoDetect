@@ -1,0 +1,13 @@
+{
+  "status": "ok",
+  "result": {
+    "event_id": "string",
+    "signal_id": "string",
+    "origin_time": "string",
+    "detection_prob": "number",
+    "magnitude_proxy": "number",
+    "picks": "array",
+    "similar_events": "array",
+    "explanation": "string"
+  }
+}

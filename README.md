@@ -1,3 +1,26 @@
+# SeismoDetect — Quickstart
+
+## Quick demo (local, CPU)
+1. Create venv and install:
+   ```bash
+   cd backend
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements_cpu.txt
+   ```
+2. Download models:
+   ```bash
+   ../scripts/download_models.sh
+   ```
+3. Start API:
+   ```bash
+   uvicorn api.main:app --reload --port 8000
+   ```
+4. Run smoke test (in another terminal):
+   ```bash
+   ./scripts/smoke_test_api.sh
+   ```
+
 # SeismoDetect 🌍⚡
 
 SeismoDetect is an end-to-end seismic event detection, phase picking, quality filtering, and similarity search platform. It pairs modern deep learning models (EQTransformer, 1D-CNN Waveform Embeddings) with distributed infrastructure (FastAPI, Celery, PostgreSQL, MinIO S3, Redis, and Qdrant Vector DB) and a responsive Electron desktop interface.

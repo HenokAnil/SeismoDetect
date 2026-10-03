@@ -4,6 +4,7 @@ import seisbench.models as sbm
 import logging
 from dataclasses import dataclass
 from typing import List, Tuple
+from backend.models.checkpoints import require_or_raise
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ class DetectionResult:
 
 class EQTransformerDetector:
     def __init__(self, weights_path=None, device="cpu"):
+        require_or_raise()
         self.device = torch.device(device)
         logger.info(f"Loading EQTransformer model on {self.device}")
         

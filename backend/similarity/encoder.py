@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from backend.models.checkpoints import require_or_raise
 
 class WaveformEncoder(nn.Module):
     """
@@ -42,6 +43,7 @@ class WaveformEncoder(nn.Module):
 
 class EmbeddingPipeline:
     def __init__(self, weights_path=None, device="cpu"):
+        require_or_raise()
         self.device = torch.device(device)
         self.model = WaveformEncoder(embedding_dim=128)
         
