@@ -18,7 +18,7 @@ from obspy import UTCDateTime, Stream, Trace
 
 from backend.api.db_session import get_db, init_db
 from backend.api.minio_client import minio_storage
-from backend.models.database import Signal, SignalQuality, Event, Pick
+from backend.models.database import Signal, SignalQuality, Event, Pick, GeneratedReport
 from backend.models.detector import EQTransformerDetector
 from backend.preprocessing.quality import extract_features
 from backend.preprocessing.noise_classifier import NoiseClassifier
@@ -28,6 +28,7 @@ from backend.similarity.index import SimilarityIndex
 from backend.ingestion.clients import SCEDCClient, EIDAClient
 from backend.reports.generator import generate_pdf_report
 from backend.llm.explain import generate_explanation
+from backend.reporting.orchestrator import run_report_pipeline
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("seismodetect")
@@ -604,6 +605,25 @@ async def websocket_infer_endpoint(websocket: WebSocket, signal_id: str):
         
         # Execute the actual ML pipeline in worker thread
         result = await asyncio.to_thread(run_ml_pipeline, signal_id, db)
+        
+        # --- NEW: Automatically queue the AI RAG report generation ---
+        try:
+            event_id_str = result["event_id"]
+            report_id = str(uuid.uuid4())
+            placeholder = GeneratedReport(
+                id=report_id,
+                event_id=event_id_str,
+                status="pending",
+                model_version=os.getenv("REPORT_MODEL", "t5-small"),
+            )
+            db.add(placeholder)
+            db.commit()
+            
+            # Fire and forget in the background
+            asyncio.create_task(asyncio.to_thread(run_report_pipeline, event_id_str, report_id))
+            logger.info(f"Automatically queued AI report generation for {event_id_str}")
+        except Exception as e:
+            logger.error(f"Failed to auto-queue AI report: {e}")
 
         # Step 5: Complete (100%)
         await websocket.send_json({
@@ -726,6 +746,17 @@ def download_pdf_report(event_id: str, db: Session = Depends(get_db)):
     sim_data = get_similar_events(event_id, limit=3, db=db)
     event_data["similar_events"] = sim_data.get("results", [])
 
+    # Fetch AI generated RAG report if it exists
+    generated_report = (
+        db.query(GeneratedReport)
+        .filter(GeneratedReport.event_id == event_id)
+        .order_by(GeneratedReport.generated_at.desc())
+        .first()
+    )
+    if generated_report and generated_report.status == "done":
+        event_data["narrative"] = generated_report.narrative_text
+        event_data["forecast"] = generated_report.forecast_json
+
     output_dir = os.path.join(os.path.dirname(__file__), "..", "reports", "generated")
     os.makedirs(output_dir, exist_ok=True)
     pdf_path = os.path.join(output_dir, f"SeismoDetect_Report_{event_id}.pdf")
@@ -737,3 +768,113 @@ def download_pdf_report(event_id: str, db: Session = Depends(get_db)):
         media_type="application/pdf",
         filename=f"SeismoDetect_Report_{event_id}.pdf"
     )
+
+
+# ---------------------------------------------------------------------------
+# RAG Report Generation Endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/api/events/{event_id}/report", status_code=202)
+def create_rag_report(
+    event_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Trigger RAG report generation for a detected event.
+
+    Immediately returns 202 Accepted with a `report_id` and a `poll_url`.
+    The heavy pipeline (Qdrant retrieval → USGS enrichment → GMPE forecast
+    → T5 narrative → MinIO upload) runs in a background worker thread.
+
+    Poll `GET /api/events/{event_id}/report` for status and content.
+    """
+    ev = db.query(Event).filter(Event.id == event_id).first()
+    if not ev:
+        raise HTTPException(status_code=404, detail="Event not found.")
+
+    report_id = str(uuid.uuid4())
+    placeholder = GeneratedReport(
+        id=report_id,
+        event_id=ev.id,
+        status="pending",
+        model_version=os.getenv("REPORT_MODEL", "t5-small"),
+    )
+    db.add(placeholder)
+    db.commit()
+
+    background_tasks.add_task(run_report_pipeline, event_id, report_id)
+
+    logger.info("Queued RAG report %s for event %s", report_id, event_id)
+    return {
+        "status":    "accepted",
+        "report_id": report_id,
+        "poll_url":  f"/api/events/{event_id}/report",
+        "message":   "Report generation queued. Poll poll_url for status.",
+    }
+
+
+@app.get("/api/events/{event_id}/report")
+def get_rag_report(event_id: str, db: Session = Depends(get_db)):
+    """
+    Retrieve the latest RAG report for an event.
+
+    Returns status='pending'|'running'|'done'|'error' plus full content
+    once generation is complete.
+    """
+    ev = db.query(Event).filter(Event.id == event_id).first()
+    if not ev:
+        raise HTTPException(status_code=404, detail="Event not found.")
+
+    report = (
+        db.query(GeneratedReport)
+        .filter(GeneratedReport.event_id == ev.id)
+        .order_by(GeneratedReport.generated_at.desc())
+        .first()
+    )
+    if not report:
+        raise HTTPException(
+            status_code=404,
+            detail="No report found for this event. POST to /api/events/{id}/report first.",
+        )
+
+    payload = {
+        "report_id":    str(report.id),
+        "event_id":     event_id,
+        "status":       report.status,
+        "model_version": report.model_version,
+        "generated_at": report.generated_at.isoformat() if report.generated_at else None,
+    }
+
+    if report.status == "done":
+        payload.update({
+            "narrative":    report.narrative_text,
+            "forecast":     report.forecast_json,
+            "similar_ids":  report.similar_ids,
+            "json_s3_key":  report.json_s3_key,
+            "html_s3_key":  report.html_s3_key,
+            "pdf_s3_key":   report.pdf_s3_key,
+        })
+    elif report.status == "error":
+        payload["error_msg"] = report.error_msg
+
+    return payload
+
+
+@app.get("/api/reporting/health")
+def reporting_health():
+    """Health check for the reporting sub-system."""
+    model_name = os.getenv("REPORT_MODEL", "t5-small")
+    llm_enabled = os.getenv("USE_LLM_EXPLAIN", "false").lower() == "true"
+    pdf_enabled = os.getenv("REPORT_PDF", "false").lower() == "true"
+    return {
+        "status":      "ok",
+        "llm_enabled": llm_enabled,
+        "llm_model":   model_name if llm_enabled else "template-fallback",
+        "pdf_enabled": pdf_enabled,
+        "endpoints":   [
+            "POST /api/events/{id}/report",
+            "GET  /api/events/{id}/report",
+            "GET  /api/reporting/health",
+        ],
+    }

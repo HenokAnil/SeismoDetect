@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.vscode/
+electron-app/node_modules/
+electron-app/dist/
+.env
+data/
+*.log
+backend/models/checkpoints/

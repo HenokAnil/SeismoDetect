@@ -5,7 +5,7 @@ from backend.models.database import Base
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
-    "postgresql://seismo_user:seismo_password@localhost:5432/seismodetect"
+    "postgresql+psycopg2://seismo_user:seismo_password@localhost:5432/seismodetect"
 )
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)

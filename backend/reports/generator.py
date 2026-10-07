@@ -197,6 +197,64 @@ def generate_pdf_report(event_data: dict, output_path: str) -> str:
         story.append(sim_table)
         story.append(Spacer(1, 12))
 
+    # Quantitative Forecast Section (from GMPE / RAG pipeline)
+    forecast = event_data.get("forecast")
+    if forecast:
+        story.append(Paragraph("Quantitative Forecast (GMPE)", section_heading))
+        forecast_data = [
+            [Paragraph("Method", cell_bold),
+             Paragraph(str(forecast.get("method", "--")), cell_style),
+             Paragraph("Confidence", cell_bold),
+             Paragraph(str(forecast.get("confidence", "--")).upper(), cell_style)],
+            [Paragraph("Predicted PGA (median)", cell_bold),
+             Paragraph(f"{forecast.get('pga_g_median', '--')} g", cell_style),
+             Paragraph("PGA 95% CI", cell_bold),
+             Paragraph(f"[{forecast.get('pga_g_lower', '?')}, {forecast.get('pga_g_upper', '?')}] g", cell_style)],
+            [Paragraph("MMI Estimate", cell_bold),
+             Paragraph(str(forecast.get("mmi", "--")), cell_style),
+             Paragraph("Damage Band", cell_bold),
+             Paragraph(str(forecast.get("damage_band", "--")), cell_style)],
+        ]
+        forecast_table = Table(forecast_data, colWidths=[120, 150, 120, 150])
+        forecast_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f0fdf4')),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#86efac')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#d1fae5')),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ]))
+        story.append(forecast_table)
+        story.append(Spacer(1, 12))
+
+    # AI Narrative Section (from RAG generator)
+    narrative = event_data.get("narrative")
+    if narrative:
+        story.append(Paragraph("AI-Generated Narrative Report", section_heading))
+        narrative_style = ParagraphStyle(
+            'Narrative',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=9,
+            leading=13,
+            textColor=colors.HexColor('#1e293b'),
+            spaceAfter=4,
+        )
+        # Render narrative line by line — map markdown headings to bold paragraphs
+        for line in narrative.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                story.append(Spacer(1, 4))
+            elif stripped.startswith("## ") or stripped.startswith("### "):
+                hdr = stripped.lstrip("#").strip()
+                story.append(Paragraph(f"<b>{hdr}</b>", narrative_style))
+            elif stripped.startswith("---"):
+                story.append(HRFlowable(width="100%", thickness=0.5,
+                                        color=colors.HexColor('#cbd5e1'),
+                                        spaceBefore=6, spaceAfter=6))
+            else:
+                story.append(Paragraph(stripped, narrative_style))
+        story.append(Spacer(1, 12))
+
     # Footer note
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#cbd5e1'), spaceBefore=20, spaceAfter=8))
     footer_style = ParagraphStyle(
@@ -212,3 +270,4 @@ def generate_pdf_report(event_data: dict, output_path: str) -> str:
 
     doc.build(story)
     return output_path
+
