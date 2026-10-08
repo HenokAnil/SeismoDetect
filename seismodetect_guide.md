@@ -48,9 +48,11 @@ graph TD
     B -->|Run inference| G["🧠 EQTransformer\n(SeisBench / PyTorch)\nPhase Picking DL Model"]
     B -->|Classify noise| H["🌲 Random Forest\n(scikit-learn)\nNoise Classifier"]
     B -->|Encode waveform| I["📐 1D-CNN Encoder\n(PyTorch)\nEmbedding Generator"]
+    B -->|Generate narrative| J["📝 RAG Reporting Engine\n(FLAN-T5)\nAutomated PDF Generator"]
 
     G --> F
     I --> F
+    F --> J
 ```
 
 ---
@@ -125,8 +127,15 @@ graph TD
 16. WebSocket sends back progress updates → Dashboard panels populate
         │
         ▼
-17. "Export Official PDF Report" button enabled
-    One click → ReportLab generates PDF with all picks, quality, similar events
+17. Retrieval-Augmented Generation (RAG) Engine runs:
+    ├── Fetches similar events from Qdrant
+    ├── Enriches metadata using USGS APIs
+    ├── Computes Ground Motion Prediction (GMPE)
+    └── Passes context to FLAN-T5 (or deterministic template) to write narrative report
+        │
+        ▼
+18. "Export Official PDF Report" button enabled
+    One click → Downloads generated PDF with Verified Facts Box, narrative, and analysis
 ```
 
 ---
@@ -254,10 +263,27 @@ Qdrant is a **vector similarity search engine**. It's like a search engine where
 
 **The collection:**
 ```
-Collection: seismic_events
+Collection: seismic_events_v2
 Vector size: 128 dimensions
 Distance metric: COSINE
 ```
+
+---
+
+### Model 5: RAG Reporting Engine (Narrative Generator)
+> **File:** [`backend/reporting/rag_generator.py`](file:///c:/Users/henok/OneDrive/Documents/VsCode/Minor-miniproject/backend/reporting/rag_generator.py)
+> **Model:** HuggingFace `google/flan-t5-base` / Deterministic Template Fallback
+
+**What is it?**
+A robust natural language generator that converts numerical inferences (magnitude, depth, SNR) and historical contexts (Qdrant vectors) into a readable, factual PDF summary.
+
+**Architecture & Factual Integrity:**
+Large Language Models are prone to hallucinating numbers. To counter this, the reporting engine uses a hybrid architecture:
+1. **Retrieval**: Searches Qdrant for structurally similar past earthquakes.
+2. **Context Enrichment**: Fetches confirmed magnitudes, depths, and pager alerts for these historical events from the USGS.
+3. **Generation**: Provides this structured context to the FLAN-T5 model with strict prompt engineering.
+4. **Validation (Anti-Hallucination)**: Scans the LLM output for numerical contradictions against the true data. If a hallucination is detected, it falls back to a deterministic, templated summary.
+5. **Verified Facts Box**: Automatically appends a structured table of verified facts that the LLM cannot edit.
 
 ---
 
@@ -421,9 +447,13 @@ RAW WAVEFORM (.mseed)
         │                          │
         │                          └──→ [PostgreSQL] events + picks tables
         │
-        └──→ [1D-CNN Encoder] — Compress waveform to 128-dim vector
-                  │
-                  └──→ [Qdrant] — Store + cosine search for similar historical events
+                  └──→ [1D-CNN Encoder] — Compress waveform to 128-dim vector
                             │
-                            └──→ Return top-3 similar events with similarity scores
+                            └──→ [Qdrant] — Store + cosine search for similar historical events
+                                      │
+                                      └──→ Return top-5 similar events
+                                                │
+                                                └──→ [RAG Engine / FLAN-T5] — Generate factual narrative
+                                                          │
+                                                          └──→ [PDF Generator] — PDF Report Download
 ```

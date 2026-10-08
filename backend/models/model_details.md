@@ -109,4 +109,28 @@ Currently, true magnitude estimation regression is not fully deployed via machin
 - **Formula**: `ML ≈ 2.0 + (Detection Probability * 1.5)`
 - **Input**: The detection confidence score returned by the EQTransformer model.
 - **Output**: Estimated Local Magnitude (ML).
-- **Future Roadmap**: The repository includes notes (`backend/models/README_magnitude.md`) indicating that this should be replaced by a trained Random Forest ML Regressor utilizing physical features extracted from the waveforms, such as Peak Ground Acceleration (PGA) and S-P phase intervals.
+## 5. RAG Reporting Engine (Automated Narrative Generation)
+
+### Overview
+The Retrieval-Augmented Generation (RAG) system is responsible for converting numerical inferences and historical context into an easily readable, factual PDF report. It avoids common hallucination pitfalls associated with large language models through strict grounding and a hybrid architecture.
+
+### Model Architecture
+- **Type**: Natural Language Generator (NLG) with Deterministic Constraints.
+- **Components**:
+  - **Retriever**: `SimilarityService` leveraging Qdrant Vector DB to find the most relevant historical earthquake waveforms.
+  - **Context Builder**: Enriches the localized data with global earthquake catalogs via the USGS Earthquake Hazards API.
+  - **Generator**: Uses HuggingFace `google/flan-t5-base` (an instruction-tuned language model) or falls back to a deterministic, zero-dependency templating engine.
+  
+### Inputs
+The system constructs a comprehensive prompt (`context_json`) consisting of:
+1. **Current Event Metrics**: Station ID, time, proxy magnitude, detection probability, and signal analysis (SNR/clipping).
+2. **Historical Context**: Up to 5 closely matched waveforms and their verified real-world impacts (e.g. USGS PAGER alerts).
+3. **Quantitative Forecast**: A Ground Motion Prediction Equation (GMPE) output estimating maximum local shaking intensity (MMI) and Peak Ground Acceleration (PGA).
+
+### Outputs
+- **Narrative**: A textual explanation summarizing the earthquake event.
+- **Verified Facts Box**: A rigidly structured, uneditable facts table that acts as the absolute ground-truth, preventing the LLM from hallucinating metrics.
+
+### Pipeline Details
+- **Script**: `backend/reporting/rag_generator.py` and `backend/reporting/context_builder.py`.
+- **Anti-Hallucination Framework**: Before generating the final document, the system explicitly cross-checks every number present in the generated narrative against the `context_json` database. Any discrepancies trigger a fallback to the safe, deterministic template, guaranteeing that no false magnitudes or times are exported in official PDFs.

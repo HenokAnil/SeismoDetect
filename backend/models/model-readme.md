@@ -11,6 +11,7 @@ This directory contains the machine learning models, database schemas, and detec
 | **Noise Classifier** | Supervised Classifier | Random Forest (100 estimators, max depth 10) | [`noise_classifier_v1.pkl`](file:///c:/Users/henok/OneDrive/Documents/VsCode/Minor-miniproject/backend/models/noise_classifier_v1.pkl) | Classify waveform signal quality & noise categories |
 | **EQTransformer** | Deep Learning Seq2Seq | CNN + Self-Attention (SeisBench) | [`detector.py`](file:///c:/Users/henok/OneDrive/Documents/VsCode/Minor-miniproject/backend/models/detector.py) | Earthquake detection & P/S phase arrival picking |
 | **Waveform Encoder** | Deep Learning Feature Extractor | 1D-CNN + Global Pooling | [`backend/similarity/encoder.py`](file:///c:/Users/henok/OneDrive/Documents/VsCode/Minor-miniproject/backend/similarity/encoder.py) | 128-dimensional embedding generation for similarity search |
+| **RAG Reporting Engine** | Natural Language Generation | FLAN-T5 / Deterministic Template Fallback | [`backend/reporting/rag_generator.py`](file:///c:/Users/henok/OneDrive/Documents/VsCode/Minor-miniproject/backend/reporting/rag_generator.py) | Factual automated PDF report generation |
 
 ---
 
@@ -78,6 +79,21 @@ Implemented in [`backend/similarity/encoder.py`](file:///c:/Users/henok/OneDrive
 - **Conv1D Layer 3:** 64 $\rightarrow$ 128 channels, kernel 3, stride 2, BatchNorm, ReLU, AdaptiveAvgPool1d(1)
 - **Dense Linear Layer:** 128 $\rightarrow$ 128 dimensions
 - **L2 Normalization:** Vector norm $\|\mathbf{v}\|_2 = 1.0$ (enables fast cosine similarity matching in Qdrant)
+
+---
+
+## 4. RAG Reporting Engine
+
+### Description
+Implemented in [`backend/reporting/rag_generator.py`](file:///c:/Users/henok/OneDrive/Documents/VsCode/Minor-miniproject/backend/reporting/rag_generator.py). Generates a factual and deterministically verifiable narrative report of the earthquake using Retrieval-Augmented Generation (RAG). 
+
+### Architecture
+- **Retrieval Engine:** SimilarityService queries the Qdrant vector database to fetch historically similar events.
+- **Context Builder:** Retrieves supplementary metadata from the USGS API and normalizes historical context data.
+- **Generation:** 
+  - **LLM Mode:** Uses HuggingFace `google/flan-t5-base` (or `t5-small`) to generate a narrative based on the enriched prompt.
+  - **Deterministic Fallback:** A template-based generation engine for use when GPU/LLM capabilities are disabled.
+- **Factual Constraints:** The engine cross-checks all generated metrics against the exact quantitative forecast (e.g. Ground Motion Prediction Equations). It automatically appends an uneditable **"Verified Facts Box"** to ensure zero-hallucination factual integrity in the final PDF export.
 
 ---
 
