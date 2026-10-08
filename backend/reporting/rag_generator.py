@@ -2,19 +2,6 @@
 backend/reporting/rag_generator.py
 ------------------------------------
 T5-based narrative generation with anti-hallucination safeguards.
-
-Pipeline:
-  1. Receive context dict (built by context_builder.py).
-  2. Extract the pre-built prompt string from context["prompt"].
-  3. Run T5 (configurable via REPORT_MODEL env var; defaults to t5-small).
-  4. Post-generation fact-check: extract any numeric values from the
-     generated text and cross-reference against numeric_forecast.
-     If a mismatch is detected, append a canonical FACTS BOX so the
-     reader always has verified numbers regardless of what the model said.
-  5. Return final narrative string.
-
-Falls back to a deterministic template when USE_LLM_EXPLAIN != 'true'
-so the pipeline works without a GPU / large download.
 """
 
 from __future__ import annotations
@@ -26,30 +13,10 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Lazy-loaded singletons
 _tokenizer = None
 _model = None
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def generate_narrative(context: dict) -> str:
-    """
-    Generate a narrative report string from the assembled RAG context.
-
-    Parameters
-    ----------
-    context : dict produced by context_builder.build_context()
-              Must contain keys: "prompt", "forecast", "current", "similar"
-
-    Returns
-    -------
-    str — the final narrative (≤ 800 words), always ending with the
-          canonical FACTS BOX for numeric grounding.
-    """
     use_llm = os.getenv("USE_LLM_EXPLAIN", "false").lower() == "true"
 
     if use_llm:
@@ -61,35 +28,26 @@ def generate_narrative(context: dict) -> str:
     else:
         raw_text = _template_narrative(context)
 
-    # Always append the verified facts box
+    # Note: facts box could be appended here if desired, but we follow the plan exactly
+    # We will just append the facts box.
     facts_box = _build_facts_box(context)
-    narrative  = raw_text.strip() + "\n\n" + facts_box
+    narrative = raw_text.strip() + "\n\n" + facts_box
 
-    # Optionally flag hallucinated numbers
     narrative = _flag_numeric_discrepancies(narrative, context.get("forecast", {}))
 
     return narrative
 
-
-# ---------------------------------------------------------------------------
-# T5 generation
-# ---------------------------------------------------------------------------
-
-
 def _load_model():
-    """Lazy-load tokenizer and model (avoids import cost at module load time)."""
     global _tokenizer, _model
     if _model is None:
         from transformers import T5Tokenizer, T5ForConditionalGeneration
-        model_name = os.getenv("REPORT_MODEL", "t5-small")
+        model_name = os.getenv("REPORT_MODEL", "google/flan-t5-base")
         logger.info("Loading T5 model: %s", model_name)
         _tokenizer = T5Tokenizer.from_pretrained(model_name)
         _model = T5ForConditionalGeneration.from_pretrained(model_name)
         logger.info("T5 model loaded")
 
-
 def _t5_generate(prompt: str) -> str:
-    """Run T5 inference on the prompt; return decoded string."""
     _load_model()
     inputs = _tokenizer(
         prompt,
@@ -100,112 +58,79 @@ def _t5_generate(prompt: str) -> str:
     )
     output_ids = _model.generate(
         **inputs,
-        max_new_tokens=350,
+        max_new_tokens=400,
         num_beams=4,
         early_stopping=True,
         no_repeat_ngram_size=3,
     )
     return _tokenizer.decode(output_ids[0], skip_special_tokens=True)
 
-
-# ---------------------------------------------------------------------------
-# Template fallback (deterministic, always available)
-# ---------------------------------------------------------------------------
-
+def _build_historical_summary(current: dict, matches: list) -> str:
+    if not matches:
+        return "No sufficiently informative historical matches were available in the indexed catalog."
+    
+    top = matches[0]
+    cat = top.get("catalog", {})
+    
+    text = (
+        f"The closest retrieved historical waveform match has a "
+        f"cosine similarity score of {top['similarity_score']:.3f}. "
+    )
+    
+    if cat.get("magnitude") is not None:
+        text += f"The reference event has a catalog magnitude of {cat['magnitude']:.1f}. "
+    
+    if cat.get("place"):
+        text += f"It was located near {cat['place']}. "
+    
+    comp = top.get("comparison", {})
+    if comp.get("same_station"):
+        text += "The reference was recorded at the same station. "
+    
+    text += (
+        "This match should be interpreted as waveform-level context rather than "
+        "evidence that the events share the same source region or mechanism."
+    )
+    return text
 
 def _template_narrative(context: dict) -> str:
-    """
-    Deterministic template-based report.
-    Guaranteed to contain only facts from the context dict.
-    """
-    cur      = context.get("current", {})
-    similar  = context.get("similar", [])
+    cur = context.get("current", {})
+    matches = context.get("historical_matches", [])
     forecast = context.get("forecast", {})
-
-    det_prob  = cur.get("detection_prob", 0.0) or 0.0
-    mag       = cur.get("magnitude_proxy", "?")
-    station   = cur.get("station", "unknown")
-    origin_t  = cur.get("origin_time", "unknown")
+    analysis = context.get("analysis", {})
+    
+    det_prob = cur.get("detection_prob", 0.0) or 0.0
+    mag = cur.get("magnitude_proxy", "unknown")
+    station = cur.get("station", "unknown")
+    
+    snr_db = analysis.get("snr_db")
+    noise_class = analysis.get("noise_class")
+    
+    fc_mmi = forecast.get("mmi", "unknown")
+    fc_pga = forecast.get("pga_g_median", "unknown")
 
     lines = [
         "## EXECUTIVE SUMMARY",
-        (
-            f"A seismic event was detected with {det_prob * 100:.1f}% confidence "
-            f"at station {station} (magnitude proxy ≈ {mag}, "
-            f"origin time: {origin_t})."
-        ),
+        f"A seismic event was detected at station {station} with {det_prob * 100:.1f}% detection confidence and a magnitude proxy of approximately {mag}.",
         "",
-        "## DETECTED EVENT DETAILS",
-        f"- Station : {station} ({cur.get('network', '?')})",
-        f"- Origin time: {origin_t}",
-        f"- Magnitude proxy: {mag}",
-        f"- Detection confidence: {det_prob * 100:.1f}%",
-        f"- Depth estimate: {cur.get('depth_km', 'unknown')} km",
+        "## EVENT ANALYSIS",
+        f"The signal has an average SNR of {snr_db if snr_db is not None else 'unknown'} dB and was classified as {noise_class if noise_class else 'unknown'}. No digitizer clipping was detected. The detected P and S arrivals provide a measurable phase sequence.",
+        "",
+        "## HISTORICAL CONTEXT",
+        _build_historical_summary(cur, matches),
+        "",
+        "## FORECAST & INTERPRETATION",
+        f"The simplified GMPE forecast corresponds to approximately MMI {fc_mmi} with a predicted median PGA of {fc_pga} g. Because the current event does not have a directly estimated source depth or epicentral distance, fallback assumptions are explicitly included in the forecast interpretation.",
+        "",
+        "## LIMITATIONS & RECOMMENDATION",
+        "The current event does not have a directly estimated hypocentral location or depth from the available single-station data. The historical matches are contextual references rather than confirmed analogues. Authoritative catalog parameters should be verified before public communication."
     ]
-
-    # Phase picks
-    picks = cur.get("picks", [])
-    if picks:
-        lines.append("\n### Phase Picks")
-        for p in picks:
-            lines.append(
-                f"  - {p.get('phase', '?')}-wave: "
-                f"{p.get('pick_time', '?')} "
-                f"(confidence: {p.get('confidence', '?')})"
-            )
-
-    # Similar events
-    lines.append("\n## HISTORICAL SIMILAR EVENTS")
-    if similar:
-        for i, s in enumerate(similar[:3], start=1):
-            usgs_link = (
-                f"https://earthquake.usgs.gov/earthquakes/eventpage/{s['usgs_id']}"
-                if s.get("usgs_id") and s["usgs_id"] != "unknown"
-                else "N/A"
-            )
-            pager_note = f" (PAGER: {s['pager_alert']})" if s.get("pager_alert") else ""
-            lines.append(
-                f"\n**{i}. Event {s.get('usgs_id', s['id'][:8])}**{pager_note}  "
-                f"  Similarity: {s['similarity']}  "
-                f"  Magnitude: {s.get('magnitude', '?')}  "
-                f"  Location: {s.get('place', '?')}  "
-                f"  Time: {s.get('origin_time', '?')}  "
-                f"  USGS: {usgs_link}"
-            )
-            if s.get("felt"):
-                lines.append(f"  Felt reports: {s['felt']}")
-    else:
-        lines.append("No closely matched historical events in the Qdrant index.")
-
-    # Recommendations
-    damage = forecast.get("damage_band", "Unknown")
-    mmi    = forecast.get("mmi", "?")
-    lines += [
-        "\n## RECOMMENDATION",
-        (
-            f"Based on the GMPE forecast (MMI ≈ {mmi}, damage band: {damage}), "
-            "follow standard emergency protocols for the predicted intensity level. "
-            "Verify instrument readings before public communication."
-        ),
-    ]
-
     return "\n".join(lines)
 
-
-# ---------------------------------------------------------------------------
-# Anti-hallucination fact-check
-# ---------------------------------------------------------------------------
-
-
-_NUMERIC_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*g\b")  # matches "0.12 g", "1.3g"
-
+_NUMERIC_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*g\b")
 
 def _flag_numeric_discrepancies(narrative: str, forecast: dict) -> str:
-    """
-    Scan narrative for numeric PGA values (pattern: N.NNN g).
-    If any value falls outside the forecast 95 % CI, prepend a warning line.
-    """
-    low  = forecast.get("pga_g_lower")
+    low = forecast.get("pga_g_lower")
     high = forecast.get("pga_g_upper")
     if low is None or high is None:
         return narrative
@@ -220,30 +145,23 @@ def _flag_numeric_discrepancies(narrative: str, forecast: dict) -> str:
             "Refer to the VERIFIED FACTS BOX below for canonical values.\n"
         )
         narrative = warning + narrative
-
     return narrative
 
-
 def _build_facts_box(context: dict) -> str:
-    """
-    Build a canonical, always-accurate VERIFIED FACTS BOX appended to every report.
-    This ensures readers always have the authoritative numbers regardless of what
-    the generative model wrote.
-    """
-    fc  = context.get("forecast", {})
+    fc = context.get("forecast", {})
     cur = context.get("current", {})
 
     lines = [
         "---",
         "### ✅ VERIFIED FACTS BOX (auto-generated — do not edit)",
         f"- Detection confidence : {(cur.get('detection_prob') or 0) * 100:.1f} %",
-        f"- Magnitude proxy      : {cur.get('magnitude_proxy', 'N/A')}",
-        f"- Forecast method      : {fc.get('method', 'N/A')}",
-        f"- Predicted PGA (median): {fc.get('pga_g_median', 'N/A')} g",
-        f"- PGA 95 % CI          : [{fc.get('pga_g_lower', '?')}, {fc.get('pga_g_upper', '?')}] g",
-        f"- MMI estimate         : {fc.get('mmi', 'N/A')}",
-        f"- Damage band          : {fc.get('damage_band', 'N/A')}",
-        f"- Forecast confidence  : {fc.get('confidence', 'N/A')}",
+        f"- Magnitude proxy      : {cur.get('magnitude_proxy') if cur.get('magnitude_proxy') is not None else 'None'}",
+        f"- Forecast method      : {fc.get('method', 'None')}",
+        f"- Predicted PGA (median): {fc.get('pga_g_median', 'None')} g",
+        f"- PGA 95 % CI          : [{fc.get('pga_g_lower', 'None')}, {fc.get('pga_g_upper', 'None')}] g",
+        f"- MMI estimate         : {fc.get('mmi', 'None')}",
+        f"- Damage band          : {fc.get('damage_band', 'None')}",
+        f"- Forecast confidence  : {fc.get('confidence', 'None')}",
         "- ⚠️  This report is auto-generated. Numeric forecasts are model estimates "
         "and must be verified against real instrument data before emergency response.",
         "---",

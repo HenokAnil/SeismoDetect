@@ -137,7 +137,14 @@ def _gmpe_forecast(
         "damage_band":  damage,
         "confidence":   confidence,
         "method":       "GMPE-BA08-simplified",
-        "inputs":       {"mag": mag, "depth_km": depth, "r_km": r_epi},
+        "inputs":       {
+            "magnitude": mag,
+            "depth_km": depth,
+            "r_km": r_epi,
+            "magnitude_source": "event_magnitude_proxy",
+            "depth_source": "default_assumption" if depth_km is None else "event",
+            "distance_source": "default_assumption" if r_km is None else "computed",
+        },
     }
 
 
@@ -194,7 +201,14 @@ def _learned_forecast(
         "damage_band":  damage,
         "confidence":   "medium",
         "method":       "XGBoost-regressor",
-        "inputs":       {"mag": mag, "depth_km": depth, "r_km": r_epi},
+        "inputs":       {
+            "magnitude": mag,
+            "depth_km": depth,
+            "r_km": r_epi,
+            "magnitude_source": "event_magnitude_proxy",
+            "depth_source": "default_assumption" if depth_km is None else "event",
+            "distance_source": "default_assumption" if r_km is None else "computed",
+        },
     }
 
 

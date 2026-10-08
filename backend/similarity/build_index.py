@@ -1,92 +1,86 @@
 #!/usr/bin/env python3
 """
 Usage:
-  python build_index.py --data-dir ../sample_data --qdrant-host http://localhost:6333 --collection seismo_events
+  python build_index.py --data-dir ../data/historical_waveforms --qdrant-host http://localhost:6333 --collection seismic_events_v2
 """
 import argparse
 import os
 import json
 from pathlib import Path
 import numpy as np
+import uuid
+import logging
 
-# obspy for loading waveforms
 import obspy
 
-# Existing encoder
+from backend.similarity.waveform import prepare_embedding_waveform
 from backend.similarity.encoder import EmbeddingPipeline
+from backend.similarity.index import SimilarityIndex
 
-try:
-    from qdrant_client import QdrantClient
-    from qdrant_client.http.models import VectorParams
-    QDRANT_AVAILABLE = True
-except ImportError:
-    QDRANT_AVAILABLE = False
+logger = logging.getLogger(__name__)
 
-def load_waveforms(data_dir):
-    events = []
-    for p in Path(data_dir).glob("*.*"):
-        if p.suffix.lower() in [".mseed", ".sac", ".csv"]:
-            events.append(str(p))
-    return events
-
-def build_and_upload(data_dir, qdrant_host=None, collection_name="seismo_events"):
-    files = load_waveforms(data_dir)
-    # The EmbeddingPipeline requires a device and weights_path (if any).
-    # Since we added require_or_raise, we can just instantiate it.
+def build_catalog_index(waveform_dir: str, qdrant_host: str, qdrant_collection: str):
     encoder = EmbeddingPipeline()
-    vectors = []
-    metas = []
-    ids = []
+    # Assuming host format: http://localhost:6333
+    host_only = qdrant_host.replace("http://", "").replace("https://", "").split(":")[0]
+    port = int(qdrant_host.split(":")[-1]) if ":" in qdrant_host else 6333
+    index = SimilarityIndex(host=host_only, port=port, collection_name=qdrant_collection)
     
-    for i, f in enumerate(files):
-        # Load using obspy and convert to a numpy array (3, N)
-        st = obspy.read(f)
-        # Ensure 3 channels and shape
-        if len(st) >= 3:
-            w_data = np.stack([st[0].data, st[1].data, st[2].data])
-        else:
-            w_data = np.repeat(st[0].data[np.newaxis, :], 3, axis=0)
-            
-        # Target length 6000? Assuming encode will handle or we just pass it
-        if w_data.shape[1] < 6000:
-            padded = np.zeros((3, 6000), dtype=np.float32)
-            padded[:, :w_data.shape[1]] = w_data
-            w_data = padded
-        elif w_data.shape[1] > 6000:
-            w_data = w_data[:, :6000]
-
-        emb = encoder.encode(w_data)  # shape (128,)
-        vectors.append(emb.astype(np.float32))
-        ids.append(str(i))
-        metas.append({"path": f})
-        
-    if not vectors:
-        print("No valid waveforms found to encode.")
+    waveform_path = Path(waveform_dir)
+    meta_files = list(waveform_path.glob("*.json"))
+    
+    if not meta_files:
+        logger.warning(f"No json files found in {waveform_dir}")
         return
-
-    vectors = np.vstack(vectors)
-    if qdrant_host and QDRANT_AVAILABLE:
-        client = QdrantClient(url=qdrant_host)
-        client.recreate_collection(collection_name, vector_size=vectors.shape[1], distance="Cosine")
-        client.upsert(collection_name, points=[(ids[i], vectors[i].tolist(), metas[i]) for i in range(len(ids))])
-        print(f"Uploaded {len(ids)} events to Qdrant: {collection_name}")
-    else:
-        # FAISS fallback
-        import faiss
-        out_dir = Path(os.path.dirname(__file__)) / "faiss_index"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        dim = vectors.shape[1]
-        index = faiss.IndexFlatL2(dim)
-        index.add(vectors)
-        faiss.write_index(index, str(out_dir / "index.faiss"))
-        np.save(out_dir / "ids.npy", np.array(ids))
-        np.save(out_dir / "metas.npy", np.array(metas, dtype=object))
-        print(f"Saved FAISS index to {out_dir}")
+        
+    for meta_file in meta_files:
+        meta = json.loads(meta_file.read_text())
+        mseed_file = meta_file.with_suffix(".mseed")
+        
+        if not mseed_file.exists():
+            logger.warning("No waveform for %s — skipping", meta["usgs_id"])
+            continue
+        
+        try:
+            st = obspy.read(str(mseed_file))
+            waveform = prepare_embedding_waveform(st)
+            embedding = encoder.encode(waveform)
+            
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"usgs:{meta['usgs_id']}"))
+            
+            index.add(
+                event_id=point_id,
+                embedding=embedding.tolist(),
+                metadata={
+                    "schema_version": "2",
+                    "source_type": "catalog",
+                    "usgs_id": meta["usgs_id"],
+                    "magnitude": meta.get("magnitude"),
+                    "place": meta.get("place"),
+                    "latitude": meta.get("lat"),
+                    "longitude": meta.get("lon"),
+                    "depth_km": meta.get("depth_km"),
+                    "origin_time": meta.get("origin_time"),
+                    "felt": meta.get("felt"),
+                    "pager_alert": meta.get("pager_alert"),
+                    "network": meta.get("network"),
+                    "station": meta.get("station"),
+                    "embedding_model_version": encoder.model_version,
+                    "preprocessing_version": "preprocess-v1",
+                }
+            )
+            logger.info("Added %s to Qdrant index", meta["usgs_id"])
+        except Exception as e:
+            logger.error("Failed to process %s: %s", meta["usgs_id"], e)
+            
+    logger.info("Catalog index built in collection: %s", qdrant_collection)
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", required=True)
-    parser.add_argument("--qdrant-host", default=None)
-    parser.add_argument("--collection", default="seismo_events")
+    parser.add_argument("--data-dir", default=os.path.join(os.path.dirname(__file__), "..", "..", "data", "historical_waveforms"))
+    parser.add_argument("--qdrant-host", default="http://localhost:6333")
+    parser.add_argument("--collection", default="seismic_events_v2")
     args = parser.parse_args()
-    build_and_upload(args.data_dir, args.qdrant_host, args.collection)
+    build_catalog_index(args.data_dir, args.qdrant_host, args.collection)
+

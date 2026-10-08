@@ -6,9 +6,11 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
+import os
+
 class SimilarityIndex:
-    def __init__(self, host="localhost", port=6333, collection_name="seismic_events"):
-        self.collection_name = collection_name
+    def __init__(self, host="localhost", port=6333, collection_name=None):
+        self.collection_name = collection_name or os.getenv("QDRANT_COLLECTION", "seismic_events_v2")
         try:
             self.client = QdrantClient(host=host, port=port)
             self._ensure_collection()
@@ -48,26 +50,37 @@ class SimilarityIndex:
         )
         return True
         
-    def search(self, query_embedding: list, limit: int = 5):
+    def search(self, query_embedding: list, limit: int = 5, source_type: str = "catalog"):
         """
         Search for similar events.
         """
         if not self.client:
             logger.error("Qdrant client not initialized.")
             return []
+
+        query_filter = rest.Filter(
+            must=[
+                rest.FieldCondition(
+                    key="source_type",
+                    match=rest.MatchValue(value=source_type)
+                )
+            ]
+        ) if source_type else None
             
         if hasattr(self.client, 'query_points'):
             response = self.client.query_points(
                 collection_name=self.collection_name,
                 query=query_embedding,
-                limit=limit
+                limit=limit,
+                query_filter=query_filter
             )
             return response.points
         elif hasattr(self.client, 'search'):
             return self.client.search(
                 collection_name=self.collection_name,
                 query_vector=query_embedding,
-                limit=limit
+                limit=limit,
+                query_filter=query_filter
             )
         else:
             logger.error("No search or query_points method found on Qdrant client.")

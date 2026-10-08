@@ -123,8 +123,11 @@ def _pipeline(event_id: str, report_id: str, db) -> dict:
     return {
         "narrative":     narrative,
         "forecast":      forecast,
+        "context":       context,
         "similar_ids":   [str(h.id) for h in similar_hits],
-        "model_version": os.getenv("REPORT_MODEL", "t5-small"),
+        "model_version": os.getenv("REPORT_MODEL", "google/flan-t5-base"),
+        "pipeline_version": "report-v2",
+        "embedding_model": "seismo-cnn-v1",
         **art_keys,
     }
 
@@ -136,6 +139,12 @@ def _pipeline(event_id: str, report_id: str, db) -> dict:
 
 def _build_current_dict(event, sig, quality, picks) -> dict:
     """Assemble a JSON-serialisable dict for the current event."""
+    p_pick = next((p for p in picks if p.phase == "P"), None)
+    s_pick = next((p for p in picks if p.phase == "S"), None)
+    p_s_interval_s = None
+    if p_pick and s_pick and p_pick.pick_time and s_pick.pick_time:
+        p_s_interval_s = round((s_pick.pick_time - p_pick.pick_time).total_seconds(), 2)
+
     return {
         "event_id":        str(event.id),
         "signal_id":       str(event.signal_id) if event.signal_id else None,
@@ -143,14 +152,24 @@ def _build_current_dict(event, sig, quality, picks) -> dict:
         "detection_prob":  event.detection_prob,
         "magnitude_proxy": event.magnitude_proxy,
         "model_version":   event.model_version,
-        "lat":             event.lat if event.lat is not None else "N/A",
-        "lon":             event.lon if event.lon is not None else "N/A",
-        "depth_km":        event.depth if event.depth is not None else "N/A",
+        "lat":             event.lat,
+        "lon":             event.lon,
+        "depth_km":        event.depth,
+        "location_source": event.location_source if hasattr(event, "location_source") else None,
         "network":         sig.network if sig else "??",
         "station":         sig.station if sig else "??",
         "channel":         sig.channel if sig else "??",
-        "snr":             quality.snr if quality else None,
-        "noise_label":     quality.noise_label if quality else None,
+        "analysis": {
+            "snr_db":             quality.snr if quality else None,
+            "noise_class":        quality.noise_label if quality else None,
+            "quality_score":      quality.quality_score if quality else None,
+            "clipping_detected":  quality.clipping_flag if quality else None,
+            "p_s_interval_s":     p_s_interval_s,
+            "phase_count":        len(picks),
+            "location_available": (event.lat is not None and event.lon is not None),
+            "p_confidence":       p_pick.confidence if p_pick else None,
+            "s_confidence":       s_pick.confidence if s_pick else None,
+        },
         "picks": [
             {
                 "phase":      p.phase,
@@ -163,26 +182,21 @@ def _build_current_dict(event, sig, quality, picks) -> dict:
 
 
 def _retrieve_similar(event_id: str, sig, current_event: dict) -> list:
-    """Re-encode the waveform and search Qdrant for similar events."""
+    """Re-encode the waveform and search Qdrant for similar events using SimilarityService."""
     try:
-        # Lazy imports to avoid circular deps at module load time
         from backend.similarity.encoder import EmbeddingPipeline
         from backend.similarity.index import SimilarityIndex
+        from backend.similarity.service import SimilarityService
         import obspy
 
         raw_bytes = minio_storage.download_bytes(sig.s3_key)
         st = obspy.read(io.BytesIO(raw_bytes))
-        w = (
-            np.stack([tr.data for tr in st[:3]])
-            if len(st) >= 3
-            else np.repeat(st[0].data[np.newaxis, :], 3, axis=0)
-        )
 
         pipeline = EmbeddingPipeline()
-        embedding = pipeline.encode(w).tolist()
-
         index = SimilarityIndex()
-        hits  = index.search(embedding, limit=6)
+        service = SimilarityService(pipeline, index)
+        
+        hits = service.find_historical_matches(st, limit=6)
 
         # Exclude the event itself from results
         return [h for h in hits if str(h.id) != event_id][:5]
@@ -224,8 +238,11 @@ def _save_result(db, report_id: str, result: dict) -> None:
         if row:
             row.narrative_text = result.get("narrative")
             row.forecast_json  = result.get("forecast")
+            row.context_json   = result.get("context")
             row.similar_ids    = result.get("similar_ids")
             row.model_version  = result.get("model_version")
+            row.pipeline_version = result.get("pipeline_version")
+            row.embedding_model = result.get("embedding_model")
             row.json_s3_key    = result.get("json_s3_key")
             row.html_s3_key    = result.get("html_s3_key")
             row.pdf_s3_key     = result.get("pdf_s3_key")

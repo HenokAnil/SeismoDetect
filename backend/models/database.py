@@ -55,6 +55,8 @@ class Event(Base):
     lat = Column(Float)
     lon = Column(Float)
     depth = Column(Float)
+    location_source = Column(String)
+    location_confidence = Column(Float)
     catalog_source = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -117,6 +119,9 @@ class GeneratedReport(Base):
     model_version  = Column(String)
     narrative_text = Column(Text)
     forecast_json  = Column(JSONB)
+    context_json   = Column(JSONB)
+    pipeline_version = Column(String)
+    embedding_model = Column(String)
     similar_ids    = Column(JSONB)   # list of retrieved event UUIDs
     # MinIO artefact paths
     pdf_s3_key     = Column(String)

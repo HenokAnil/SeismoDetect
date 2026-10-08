@@ -1,7 +1,16 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from backend.models.checkpoints import require_or_raise
+import os
+from pathlib import Path
+from backend.models.checkpoints import validate_encoder_checkpoint
+
+DEFAULT_ENCODER_CHECKPOINT = (
+    Path(__file__).resolve().parent.parent
+    / "models"
+    / "checkpoints"
+    / "encoder_v1.pth"
+)
 
 class WaveformEncoder(nn.Module):
     """
@@ -43,15 +52,37 @@ class WaveformEncoder(nn.Module):
 
 class EmbeddingPipeline:
     def __init__(self, weights_path=None, device="cpu"):
-        require_or_raise()
         self.device = torch.device(device)
+        
+        checkpoint_path = Path(
+            weights_path or
+            os.getenv("ENCODER_CHECKPOINT", DEFAULT_ENCODER_CHECKPOINT)
+        )
+        
+        validate_encoder_checkpoint(checkpoint_path)
+        
         self.model = WaveformEncoder(embedding_dim=128)
         
-        if weights_path:
-            self.model.load_state_dict(torch.load(weights_path, map_location=self.device))
+        checkpoint = torch.load(
+            checkpoint_path,
+            map_location=self.device,
+            weights_only=False
+        )
         
+        state_dict = (
+            checkpoint["model_state_dict"]
+            if "model_state_dict" in checkpoint
+            else checkpoint
+        )
+        
+        self.model.load_state_dict(state_dict)
         self.model.to(self.device)
         self.model.eval()
+        
+        self.model_version = os.getenv(
+            "EMBEDDING_MODEL_VERSION",
+            "seismo-cnn-v1"
+        )
         
     def encode(self, waveform: np.ndarray) -> np.ndarray:
         """

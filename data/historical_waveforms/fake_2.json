@@ -1,0 +1,1 @@
+{"usgs_id": "fake_2", "magnitude": 7.0, "place": "Fake Place 2", "lat": 36.0, "lon": -120.0, "depth_km": 10.0, "origin_time": "2023-01-01T00:00:00Z", "felt": 200, "pager_alert": "green", "network": "CI", "station": "PAS"}
