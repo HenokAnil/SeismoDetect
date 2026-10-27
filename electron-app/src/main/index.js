@@ -4,11 +4,20 @@ const fs = require('fs');
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
-    width: 1300,
-    height: 850,
-    minWidth: 1000,
-    minHeight: 700,
-    title: "SeismoDetect - Seismic Phase Detection & Vector Intelligence",
+    width: 1440,
+    height: 900,
+    minWidth: 1180,
+    minHeight: 760,
+    title: "SeismoDetect",
+    backgroundColor: '#0e0f11',
+    show: false,
+    // Custom title bar: the renderer draws the top bar, the OS keeps its window buttons
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#0e0f11',
+      symbolColor: '#9a9893',
+      height: 52
+    },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -17,6 +26,7 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+  mainWindow.once('ready-to-show', () => mainWindow.show());
   
   // Uncomment below to debug in DevTools if desired
   // mainWindow.webContents.openDevTools();
@@ -82,6 +92,22 @@ ipcMain.handle('api:uploadFile', async (event, filePath) => {
       success: false, 
       error: `${err.message}${detail}. Ensure the FastAPI backend is running and ready on http://127.0.0.1:8000.` 
     };
+  }
+});
+
+// IPC Handler to recolour the native title bar buttons when the theme changes
+const TITLEBAR_THEMES = {
+  dark: { color: '#0e0f11', symbolColor: '#9a9893' },
+  light: { color: '#f4f3ef', symbolColor: '#4f4d48' }
+};
+
+ipcMain.handle('app:setTheme', (event, theme) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const colors = TITLEBAR_THEMES[theme];
+  if (!win || !colors) return;
+  win.setBackgroundColor(colors.color);
+  if (typeof win.setTitleBarOverlay === 'function') {
+    win.setTitleBarOverlay({ ...colors, height: 52 });
   }
 });
 

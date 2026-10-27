@@ -3,534 +3,295 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SeismoDetect - AI Earthquake Detection & Phase Picking</title>
-    <style>
-        :root {
-            --bg-main: #0b0f19;
-            --bg-card: #151d30;
-            --bg-card-hover: #1c2742;
-            --border-color: #263353;
-            --text-primary: #f1f5f9;
-            --text-muted: #94a3b8;
-            --accent-blue: #3b82f6;
-            --accent-cyan: #06b6d4;
-            --accent-green: #10b981;
-            --accent-orange: #f59e0b;
-            --accent-red: #ef4444;
-            --accent-purple: #8b5cf6;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
-            background-color: var(--bg-main);
-            color: var(--text-primary);
-            padding: 20px;
-            min-height: 100vh;
-        }
-
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border-color);
-            margin-bottom: 20px;
-        }
-
-        .brand {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .brand-logo {
-            font-size: 28px;
-        }
-
-        .brand h1 {
-            font-size: 20px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
-            color: #ffffff;
-        }
-
-        .brand-subtitle {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-top: 2px;
-        }
-
-        .header-meta {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 4px 10px;
-            border-radius: 9999px;
-            font-size: 11px;
-            font-weight: 600;
-            background: rgba(16, 185, 129, 0.15);
-            color: var(--accent-green);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-        }
-
-        .badge.offline {
-            background: rgba(239, 68, 68, 0.15);
-            color: var(--accent-red);
-            border-color: rgba(239, 68, 68, 0.3);
-        }
-
-        .dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background-color: currentColor;
-        }
-
-        /* Top Controls */
-        .controls-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            padding: 12px 18px;
-            margin-bottom: 16px;
-        }
-
-        .action-group {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        button {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background-color: var(--accent-blue);
-            color: #ffffff;
-            border: none;
-            padding: 9px 16px;
-            border-radius: 6px;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        button:hover {
-            background-color: #2563eb;
-            transform: translateY(-1px);
-        }
-
-        button.secondary {
-            background-color: transparent;
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-        }
-
-        button.secondary:hover {
-            background-color: var(--bg-card-hover);
-            border-color: #3b82f6;
-        }
-
-        button.success {
-            background-color: var(--accent-green);
-        }
-
-        button.success:hover {
-            background-color: #059669;
-        }
-
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        #status-text {
-            font-size: 13px;
-            color: var(--text-muted);
-        }
-
-        /* Progress Bar */
-        .progress-container {
-            display: none;
-            margin-bottom: 16px;
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 12px 16px;
-        }
-
-        .progress-header {
-            display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-bottom: 6px;
-        }
-
-        .progress-track {
-            width: 100%;
-            height: 8px;
-            background: #0d1322;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            width: 0%;
-            background: linear-gradient(90deg, #3b82f6, #06b6d4);
-            transition: width 0.3s ease;
-        }
-
-        /* Main Grid */
-        .main-layout {
-            display: grid;
-            grid-template-columns: 2.2fr 1fr;
-            gap: 20px;
-        }
-
-        .card {
-            background-color: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            padding: 18px;
-            margin-bottom: 18px;
-        }
-
-        .card h2 {
-            font-size: 15px;
-            font-weight: 700;
-            color: #ffffff;
-            margin-bottom: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .card h2 span {
-            font-size: 11px;
-            font-weight: 500;
-            color: var(--text-muted);
-        }
-
-        #waveform-plot {
-            width: 100%;
-            height: 480px;
-            background: #0d1322;
-            border-radius: 8px;
-        }
-
-        /* Info items */
-        .metric-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            font-size: 13px;
-        }
-
-        .metric-row:last-child {
-            border-bottom: none;
-        }
-
-        .metric-label {
-            color: var(--text-muted);
-        }
-
-        .metric-value {
-            font-weight: 600;
-            color: #ffffff;
-            font-family: 'SFMono-Regular', Consolas, monospace;
-        }
-
-        .pill {
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-        }
-
-        .pill.clean { background: rgba(16, 185, 129, 0.2); color: #34d399; }
-        .pill.noise { background: rgba(239, 68, 68, 0.2); color: #f87171; }
-        .pill.phase-p { background: rgba(59, 130, 246, 0.25); color: #60a5fa; }
-        .pill.phase-s { background: rgba(245, 158, 11, 0.25); color: #fbbf24; }
-
-        /* Similar events list */
-        .similar-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border-color);
-            padding: 8px 10px;
-            border-radius: 6px;
-            margin-bottom: 8px;
-            font-size: 12px;
-        }
-
-        .sim-bar {
-            width: 50px;
-            height: 6px;
-            background: #0b0f19;
-            border-radius: 3px;
-            overflow: hidden;
-            margin-top: 4px;
-        }
-
-        .sim-fill {
-            height: 100%;
-            background: var(--accent-cyan);
-        }
-
-        /* Modal */
-        .modal-overlay {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(4px);
-            align-items: center;
-            justify-content: center;
-            z-index: 999;
-        }
-
-        .modal {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            width: 440px;
-            padding: 24px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
-        }
-
-        .modal h3 {
-            margin-bottom: 16px;
-            font-size: 16px;
-        }
-
-        .form-group {
-            margin-bottom: 12px;
-        }
-
-        .form-group label {
-            display: block;
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-bottom: 4px;
-        }
-
-        .form-group input, .form-group select {
-            width: 100%;
-            padding: 8px 10px;
-            background: #0d1322;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            color: #ffffff;
-            font-size: 13px;
-        }
-
-        .modal-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-            margin-top: 20px;
-        }
-    </style>
+    <title>SeismoDetect</title>
+    <script>
+        // Apply the saved (or system) theme before first paint
+        (function () {
+            let theme = null;
+            try { theme = localStorage.getItem('seismo-theme'); } catch (e) {}
+            if (theme !== 'light' && theme !== 'dark') {
+                theme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+            }
+            document.documentElement.dataset.theme = theme;
+            // Hidden until the intro animation takes over, so there is no flash while scripts load
+            document.documentElement.classList.add('is-booting');
+        })();
+    </script>
+    <link rel="stylesheet" href="../../node_modules/lenis/dist/lenis.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <defs>
+            <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V3m0 0L7 8m5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
+            <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+            <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></symbol>
+            <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+            <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4M9 12h6"/></symbol>
+            <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+            <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-9 9"/></symbol>
+            <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+            <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+            <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 8v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></symbol>
+            <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.5 2.5M15.2 15.2l2.5 2.5M6.3 17.7l2.5-2.5M15.2 8.8l2.5-2.5"/></symbol>
+            <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></symbol>
+            <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></symbol>
+            <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></symbol>
+        </defs>
+    </svg>
 
-    <header>
-        <div class="brand">
-            <div class="brand-logo">🌍⚡</div>
-            <div>
-                <h1>SeismoDetect Desktop</h1>
-                <div class="brand-subtitle">Automated Seismic Phase Detection & Vector Intelligence Platform</div>
+    <div class="app">
+        <!-- Top bar doubles as the window's drag region -->
+        <header class="topbar">
+            <div class="brand">
+                <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true">
+                    <path d="M2 14h5l2.5-6 4 13 3.5-16 3 12 1.8-3H26"/>
+                </svg>
+                <span class="brand-name">SeismoDetect</span>
             </div>
-        </div>
-        <div class="header-meta">
-            <div id="backend-badge" class="badge">
-                <span class="dot"></span> <span id="backend-status">Connecting Backend...</span>
+            <span class="topbar-sep" aria-hidden="true"></span>
+            <div class="station-chip" title="Active station">
+                <span class="chip-label">Station</span>
+                <span id="active-station-text" class="mono">None</span>
             </div>
-            <div id="station-badge" class="badge" style="background: rgba(59,130,246,0.15); color: #60a5fa; border-color: rgba(59,130,246,0.3);">
-                Station: <span id="active-station-text">None</span>
-            </div>
-        </div>
-    </header>
-
-    <!-- Controls Bar -->
-    <div class="controls-bar">
-        <div class="action-group">
-            <button id="upload-btn">
-                <span>📁</span> Upload .mseed File
-            </button>
-            <button id="fetch-btn" class="secondary">
-                <span>🌐</span> Fetch from SCEDC / EIDA
-            </button>
-            <button id="demo-btn" class="secondary" style="border-color: #8b5cf6; color: #a78bfa;">
-                <span>✨</span> Load Demo Waveform
-            </button>
-        </div>
-        <div>
-            <span id="status-text">Ready. Please upload or fetch a seismic waveform.</span>
-        </div>
-    </div>
-
-    <!-- Live Inference Progress Bar -->
-    <div id="progress-container" class="progress-container">
-        <div class="progress-header">
-            <span id="progress-step">Initializing neural detection pipeline...</span>
-            <span id="progress-percent">0%</span>
-        </div>
-        <div class="progress-track">
-            <div id="progress-fill" class="progress-fill"></div>
-        </div>
-    </div>
-
-    <!-- Main Content Layout -->
-    <div class="main-layout">
-        <!-- Left Panel: Waveform Visualization -->
-        <div>
-            <div class="card">
-                <h2>
-                    Interactive 3-Component Waveform Traces
-                    <span id="trace-meta">Awaiting data...</span>
-                </h2>
-                <div id="waveform-plot"></div>
-            </div>
-        </div>
-
-        <!-- Right Panel: Quality, Detections & Qdrant Search -->
-        <div>
-            <!-- Signal Quality Card -->
-            <div class="card">
-                <h2>Signal Quality & Noise Assessment</h2>
-                <div class="metric-row">
-                    <span class="metric-label">Signal-to-Noise Ratio (SNR):</span>
-                    <span id="val-snr" class="metric-value">-- dB</span>
+            <p id="status-text" class="status-line" aria-live="polite">Ready. Load a waveform to begin.</p>
+            <div class="topbar-end">
+                <!-- Live link indicator: a running trace when the backend answers, a broken line when it doesn't -->
+                <div id="backend-badge" class="backend" data-state="connecting" title="FastAPI backend at 127.0.0.1:8000">
+                    <svg class="backend-trace" viewBox="0 0 34 14" aria-hidden="true">
+                        <path class="trace-live" d="M0 7h8l2-4 3 8 3-10 2.5 9 2-5 1.5 2H34"/>
+                        <path class="trace-flat" d="M0 7h13M21 7h13"/>
+                    </svg>
+                    <span id="backend-status">Connecting</span>
+                    <span id="backend-latency" class="mono backend-latency"></span>
                 </div>
-                <div class="metric-row">
-                    <span class="metric-label">Noise Classifier:</span>
-                    <span id="val-noise" class="pill">--</span>
-                </div>
-                <div class="metric-row">
-                    <span class="metric-label">Digitizer Clipping:</span>
-                    <span id="val-clip" class="metric-value">--</span>
-                </div>
-                <div class="metric-row">
-                    <span class="metric-label">Quality Score:</span>
-                    <span id="val-quality" class="metric-value">--</span>
-                </div>
-            </div>
-
-            <!-- Deep Learning Phase Picks Card -->
-            <div class="card">
-                <h2>Phase Picking (EQTransformer)</h2>
-                <div class="metric-row">
-                    <span class="metric-label">Event Confidence:</span>
-                    <span id="val-prob" class="metric-value">--</span>
-                </div>
-                <div class="metric-row">
-                    <span class="metric-label">Magnitude Proxy:</span>
-                    <span id="val-mag" class="metric-value">--</span>
-                </div>
-                <div class="metric-row">
-                    <span class="metric-label">Primary (P) Pick:</span>
-                    <span id="val-p" class="pill phase-p">--</span>
-                </div>
-                <div class="metric-row">
-                    <span class="metric-label">Secondary (S) Pick:</span>
-                    <span id="val-s" class="pill phase-s">--</span>
-                </div>
-                <div class="metric-row">
-                    <span class="metric-label">Event Origin Time:</span>
-                    <span id="val-origin" class="metric-value" style="font-size: 11px;">--</span>
-                </div>
-            </div>
-
-            <!-- Qdrant Vector Similarity Search Card -->
-            <div class="card">
-                <h2>
-                    Similar Events (Qdrant Vector DB)
-                    <span>128-d Embedding</span>
-                </h2>
-                <div id="similar-list">
-                    <div style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 10px 0;">
-                        Run inference to search vector database.
-                    </div>
-                </div>
-                <button id="report-btn" class="success" style="width: 100%; margin-top: 14px;" disabled>
-                    <span>📄</span> Export Official PDF Report
+                <button id="theme-btn" class="icon-btn" aria-label="Switch to light theme" title="Switch theme">
+                    <svg class="icon icon-theme-dark"><use href="#i-sun"/></svg>
+                    <svg class="icon icon-theme-light"><use href="#i-moon"/></svg>
+                </button>
+                <button id="report-btn" class="btn btn-ghost" disabled>
+                    <svg class="icon"><use href="#i-download"/></svg>
+                    Export PDF
                 </button>
             </div>
-        </div>
+        </header>
+
+        <main class="workspace">
+            <!-- Stage: the waveform is the work object -->
+            <section class="stage">
+                <div class="stage-head">
+                    <div class="stage-title">
+                        <h1>Waveform</h1>
+                        <p id="trace-meta" class="mono">No stream loaded</p>
+                    </div>
+                    <div class="source-actions">
+                        <button id="demo-btn" class="btn btn-ghost">
+                            <svg class="icon"><use href="#i-play"/></svg>
+                            Demo stream
+                        </button>
+                        <button id="fetch-btn" class="btn btn-ghost">
+                            <svg class="icon"><use href="#i-globe"/></svg>
+                            Fetch from FDSN
+                        </button>
+                        <button id="upload-btn" class="btn btn-primary">
+                            <svg class="icon"><use href="#i-upload"/></svg>
+                            Open .mseed
+                        </button>
+                    </div>
+                </div>
+
+                <div id="plot-frame" class="plot-frame" data-state="empty">
+                    <div class="plot-toolbar">
+                        <div class="comp-toggles" role="group" aria-label="Components">
+                            <button class="comp-toggle" data-comp="Z" aria-pressed="true"><span class="swatch"></span>Z</button>
+                            <button class="comp-toggle" data-comp="N" aria-pressed="true"><span class="swatch"></span>N</button>
+                            <button class="comp-toggle" data-comp="E" aria-pressed="true"><span class="swatch"></span>E</button>
+                        </div>
+                        <div class="tool-group">
+                            <button id="fit-picks-btn" class="tool-btn" title="Zoom to P and S picks" disabled>
+                                <svg class="icon"><use href="#i-fit"/></svg>Fit picks
+                            </button>
+                            <button id="reset-zoom-btn" class="tool-btn" title="Show full stream">
+                                <svg class="icon"><use href="#i-reset"/></svg>Reset
+                            </button>
+                            <button id="export-png-btn" class="tool-btn" title="Save plot as PNG">
+                                <svg class="icon"><use href="#i-image"/></svg>PNG
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="waveform-plot"></div>
+
+                    <div id="empty-state" class="empty-state">
+                        <canvas id="empty-trace" aria-hidden="true"></canvas>
+                        <div class="empty-content">
+                            <div class="drop-target">
+                                <svg class="icon icon-lg"><use href="#i-file"/></svg>
+                            </div>
+                            <h2>Drop a MiniSEED file to begin</h2>
+                            <p>SeismoDetect checks signal quality, picks P and S arrivals with EQTransformer and searches for similar historical events.</p>
+                            <div class="empty-actions">
+                                <button class="btn btn-primary" data-proxy="upload-btn">
+                                    <svg class="icon"><use href="#i-upload"/></svg>Choose file
+                                </button>
+                                <button class="btn btn-ghost" data-proxy="fetch-btn">
+                                    <svg class="icon"><use href="#i-globe"/></svg>Fetch from FDSN
+                                </button>
+                                <button class="btn btn-ghost" data-proxy="demo-btn">
+                                    <svg class="icon"><use href="#i-play"/></svg>Try demo stream
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="progress-container" class="pipeline" hidden>
+                        <ol class="pipeline-steps">
+                            <li data-step="fetching_waveform"><span class="step-mark"></span><span>Retrieve</span></li>
+                            <li data-step="quality_analysis"><span class="step-mark"></span><span>Quality</span></li>
+                            <li data-step="filtering"><span class="step-mark"></span><span>Filter</span></li>
+                            <li data-step="eqtransformer"><span class="step-mark"></span><span>EQTransformer</span></li>
+                            <li data-step="completed"><span class="step-mark"></span><span>Complete</span></li>
+                        </ol>
+                        <div class="pipeline-foot">
+                            <span id="progress-step">Connecting to inference server</span>
+                            <span id="progress-percent" class="mono">0%</span>
+                        </div>
+                        <div class="pipeline-track"><div id="progress-fill"></div></div>
+                    </div>
+
+                    <div class="drop-overlay" aria-hidden="true">
+                        <svg class="icon icon-lg"><use href="#i-upload"/></svg>
+                        <span>Release to upload</span>
+                    </div>
+                </div>
+
+                <!-- Instrument readout under the plot -->
+                <div class="readout">
+                    <div class="readout-cell">
+                        <span class="readout-label">Detection confidence</span>
+                        <span id="val-prob" class="readout-value mono">—</span>
+                        <span class="meter"><span id="meter-prob" class="meter-fill"></span></span>
+                    </div>
+                    <div class="readout-cell">
+                        <span class="readout-label">Magnitude proxy</span>
+                        <span id="val-mag" class="readout-value mono">—</span>
+                        <span class="readout-note">Local estimate</span>
+                    </div>
+                    <div class="readout-cell">
+                        <span class="readout-label">Signal-to-noise</span>
+                        <span class="readout-value mono"><span id="val-snr">—</span><span class="unit">dB</span></span>
+                        <span class="readout-note">Pre-event window</span>
+                    </div>
+                    <div class="readout-cell">
+                        <span class="readout-label">Quality score</span>
+                        <span id="val-quality" class="readout-value mono">—</span>
+                        <span class="meter"><span id="meter-quality" class="meter-fill"></span></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Inspector -->
+            <aside id="inspector" class="inspector">
+                <div class="inspector-content">
+                    <section class="panel">
+                        <h3>Signal quality</h3>
+                        <dl class="facts">
+                            <div><dt>Noise classifier</dt><dd><span id="val-noise" class="tag" data-tone="">—</span></dd></div>
+                            <div><dt>Digitizer clipping</dt><dd id="val-clip">—</dd></div>
+                        </dl>
+                    </section>
+
+                    <section class="panel">
+                        <h3>Phase picks <span class="panel-meta">EQTransformer</span></h3>
+                        <div class="pick-timeline" id="pick-timeline">
+                            <span class="pt-track"></span>
+                            <span class="pt-window" id="pt-window"></span>
+                            <span class="pt-mark pt-p" id="pt-p"></span>
+                            <span class="pt-mark pt-s" id="pt-s"></span>
+                        </div>
+                        <div class="pick-row" data-phase="P">
+                            <span class="phase-badge p">P</span>
+                            <div class="pick-body">
+                                <span id="val-p" class="mono">—</span>
+                                <span class="meter thin"><span id="meter-p" class="meter-fill"></span></span>
+                            </div>
+                            <span id="conf-p" class="mono pick-conf">—</span>
+                        </div>
+                        <div class="pick-row" data-phase="S">
+                            <span class="phase-badge s">S</span>
+                            <div class="pick-body">
+                                <span id="val-s" class="mono">—</span>
+                                <span class="meter thin"><span id="meter-s" class="meter-fill"></span></span>
+                            </div>
+                            <span id="conf-s" class="mono pick-conf">—</span>
+                        </div>
+                        <dl class="facts">
+                            <div><dt>S–P interval</dt><dd id="val-sp" class="mono">—</dd></div>
+                            <div><dt>Origin time (UTC)</dt><dd id="val-origin" class="mono">—</dd></div>
+                        </dl>
+                    </section>
+
+                    <section class="panel">
+                        <h3>Similar events <span class="panel-meta">128-d embedding</span></h3>
+                        <div id="similar-list" class="similar-list">
+                            <p class="panel-empty">Matches from the vector index appear after inference.</p>
+                        </div>
+                    </section>
+
+                    <section class="panel" id="ai-panel">
+                        <h3>AI summary <span class="panel-meta">RAG</span></h3>
+                        <div id="ai-body" class="ai-body">
+                            <p class="panel-empty">A written summary and ground-motion forecast can be generated once an event is detected.</p>
+                        </div>
+                        <button id="ai-btn" class="btn btn-ghost btn-block" disabled>
+                            <svg class="icon"><use href="#i-spark"/></svg>
+                            Generate summary
+                        </button>
+                    </section>
+                </div>
+            </aside>
+        </main>
     </div>
 
-    <!-- Modal for SCEDC / EIDA Fetch -->
-    <div id="fetch-modal" class="modal-overlay">
-        <div class="modal">
-            <h3>Fetch Seismic Waveforms (FDSN Web Services)</h3>
-            <div class="form-group">
-                <label>FDSN Source Provider</label>
-                <select id="fetch-source">
-                    <option value="scedc">SCEDC (Southern California)</option>
-                    <option value="eida">EIDA (European Integrated Data Archive)</option>
-                </select>
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                <div class="form-group">
-                    <label>Network Code</label>
-                    <input id="fetch-network" type="text" value="CI">
+    <!-- FDSN fetch slide-over -->
+    <div id="fetch-modal" class="drawer-root" hidden>
+        <div class="drawer-scrim" data-close></div>
+        <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+            <header class="drawer-head">
+                <h2 id="drawer-title">Fetch waveform</h2>
+                <button class="icon-btn" data-close aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+            </header>
+            <form id="fetch-form" class="drawer-body" novalidate>
+                <fieldset class="field">
+                    <legend>Data centre</legend>
+                    <div class="segmented" role="radiogroup">
+                        <label><input type="radio" name="fetch-source" value="scedc" checked><span>SCEDC<small>Southern California</small></span></label>
+                        <label><input type="radio" name="fetch-source" value="eida"><span>EIDA<small>European archive</small></span></label>
+                    </div>
+                </fieldset>
+                <div class="field-row">
+                    <label class="field"><span>Network</span><input id="fetch-network" type="text" value="CI" spellcheck="false" autocomplete="off"></label>
+                    <label class="field"><span>Station</span><input id="fetch-station" type="text" value="PAS" spellcheck="false" autocomplete="off"></label>
+                    <label class="field"><span>Channel</span><input id="fetch-channel" type="text" value="HHZ" spellcheck="false" autocomplete="off"></label>
                 </div>
-                <div class="form-group">
-                    <label>Station Code</label>
-                    <input id="fetch-station" type="text" value="PAS">
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Channel (e.g. HHZ, BHZ)</label>
-                <input id="fetch-channel" type="text" value="HHZ">
-            </div>
-            <div class="form-group">
-                <label>Start Time (UTC)</label>
-                <input id="fetch-start" type="text" value="2021-01-01T00:00:00">
-            </div>
-            <div class="form-group">
-                <label>End Time (UTC)</label>
-                <input id="fetch-end" type="text" value="2021-01-01T00:01:00">
-            </div>
-            <div class="modal-actions">
-                <button id="modal-cancel-btn" class="secondary">Cancel</button>
-                <button id="modal-submit-btn">Fetch Waveform</button>
-            </div>
-        </div>
+                <label class="field"><span>Start time (UTC)</span><input id="fetch-start" type="text" value="2021-01-01T00:00:00" spellcheck="false" autocomplete="off"></label>
+                <label class="field"><span>End time (UTC)</span><input id="fetch-end" type="text" value="2021-01-01T00:01:00" spellcheck="false" autocomplete="off"></label>
+                <p id="fetch-error" class="field-error" hidden></p>
+            </form>
+            <footer class="drawer-foot">
+                <button id="modal-cancel-btn" class="btn btn-ghost" data-close>Cancel</button>
+                <button id="modal-submit-btn" class="btn btn-primary" form="fetch-form" type="submit">Fetch waveform</button>
+            </footer>
+        </aside>
     </div>
 
-    <!-- Plotly CDN with fallback -->
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-    <script>
-        if (typeof Plotly === 'undefined') {
-            document.write('<script src="../../node_modules/plotly.js-dist-min/plotly.min.js"><\/script>');
-        }
-    </script>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+
+    <script src="../../node_modules/plotly.js-dist-min/plotly.min.js"></script>
+    <script src="../../node_modules/gsap/dist/gsap.min.js"></script>
+    <script src="../../node_modules/lenis/dist/lenis.min.js"></script>
+    <script src="motion.js"></script>
+    <script src="plot.js"></script>
     <script src="renderer.js"></script>
 </body>
 </html>

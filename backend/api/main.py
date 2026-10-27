@@ -53,6 +53,11 @@ frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if os.path.exists(frontend_dir):
     app.mount("/app", StaticFiles(directory=frontend_dir, html=True), name="frontend")
 
+# The UI loads Plotly, GSAP and Lenis via ../../node_modules/, which resolves to /node_modules/ under /app/
+frontend_modules = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "electron-app", "node_modules"))
+if os.path.exists(frontend_modules):
+    app.mount("/node_modules", StaticFiles(directory=frontend_modules), name="frontend_modules")
+
 # Global model singletons (initialized on startup)
 detector_model: Optional[EQTransformerDetector] = None
 noise_classifier: Optional[NoiseClassifier] = None
