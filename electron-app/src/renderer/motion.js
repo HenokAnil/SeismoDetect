@@ -30,6 +30,53 @@
         }, reveal);
     }
 
+    // Synthetic seismogram for the splash: noise floor, P arrival, larger S arrival, coda
+    function seismogramPath(width, height, pX, sX) {
+        let seed = 7;
+        const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280 - 0.5; };
+        const mid = height / 2;
+        let d = `M0 ${mid}`;
+        for (let x = 2; x <= width; x += 2) {
+            let a = 0.03;
+            if (x > pX) a += 0.32 * Math.exp(-(x - pX) / 38);
+            if (x > sX) a += 0.9 * Math.exp(-(x - sX) / 70);
+            d += `L${x} ${(mid + rnd() * a * height).toFixed(1)}`;
+        }
+        return d;
+    }
+
+    // Launch sequence, then hands over to intro(). Total about 2 s.
+    function splash(done) {
+        const el = document.getElementById('splash');
+        if (!el) { done(); return; }
+        if (!hasGsap || reduced) { el.remove(); done(); return; }
+
+        const path = document.getElementById('splash-path');
+        path.setAttribute('d', seismogramPath(720, 120, 268, 392));
+        const len = path.getTotalLength();
+
+        const word = el.querySelector('.splash-word');
+        word.innerHTML = word.textContent.split('').map(c => `<span class="ch">${c}</span>`).join('');
+
+        const tl = gsap.timeline({ onComplete: () => el.remove() });
+        tl.set(path, { strokeDasharray: len, strokeDashoffset: len })
+          .from('.splash-baseline', { scaleX: 0, transformOrigin: '0 50%', duration: 0.6, ease: 'power3.out' })
+          .to(path, { strokeDashoffset: 0, duration: 1.1, ease: 'power2.inOut' }, 0.15)
+          .to('.splash-pick-p', { opacity: 1, duration: 0.25 }, 0.62)
+          .to('.splash-pick-s', { opacity: 1, duration: 0.25 }, 0.8)
+          .from('.splash-mark', { opacity: 0, scale: 0.7, rotate: -8, duration: 0.6, ease: 'back.out(2)' }, 0.55)
+          .from('.splash-word .ch', { opacity: 0, y: 14, duration: 0.5, stagger: 0.025 }, 0.62)
+          .from('.splash-caption', { opacity: 0, y: 6, duration: 0.5 }, 0.95)
+          // Hand-off: splash lifts away while the workspace builds in underneath
+          .to(el, { opacity: 0, y: -16, duration: 0.55, ease: 'power2.in' }, 1.6)
+          .add(done, 1.75);
+
+        // Any key or click skips straight to the app
+        const skip = () => { tl.progress(1); window.removeEventListener('keydown', skip); };
+        window.addEventListener('keydown', skip, { once: true });
+        el.addEventListener('click', skip, { once: true });
+    }
+
     // Animated number. format(value) returns the display string.
     function countUp(el, to, format, opts = {}) {
         if (!el) return;
@@ -239,7 +286,7 @@
     }
 
     window.Motion = {
-        themeSwap,
+        themeSwap, splash,
         reduced, intro, countUp, meter, revealTraces, revealPicks, fadeIn, fadeOut,
         leaveEmpty, stagger, openDrawer, closeDrawer, toastIn, toastOut, initLenis, emptyTrace
     };

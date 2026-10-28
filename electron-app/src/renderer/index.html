@@ -40,6 +40,23 @@
         </defs>
     </svg>
 
+    <!-- Launch splash: a seismogram draws itself, the wordmark settles, then the app takes over -->
+    <div id="splash" class="splash" aria-hidden="true">
+        <div class="splash-stage">
+            <svg class="splash-trace" viewBox="0 0 720 120" preserveAspectRatio="none">
+                <line class="splash-baseline" x1="0" y1="60" x2="720" y2="60"/>
+                <path id="splash-path" d=""/>
+                <line class="splash-pick splash-pick-p" x1="268" y1="10" x2="268" y2="110"/>
+                <line class="splash-pick splash-pick-s" x1="392" y1="10" x2="392" y2="110"/>
+            </svg>
+            <div class="splash-brand">
+                <svg class="splash-mark" viewBox="0 0 28 28"><path d="M2 14h5l2.5-6 4 13 3.5-16 3 12 1.8-3H26"/></svg>
+                <span class="splash-word">SeismoDetect</span>
+            </div>
+            <p class="splash-caption">Seismic phase detection &amp; vector intelligence</p>
+        </div>
+    </div>
+
     <div class="app">
         <!-- Top bar doubles as the window's drag region -->
         <header class="topbar">

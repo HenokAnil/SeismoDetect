@@ -709,4 +709,4 @@ syncThemeChrome(document.documentElement.dataset.theme);
 
 Motion.emptyTrace($('empty-trace'));
 Motion.initLenis($('inspector'), document.querySelector('.inspector-content'));
-Motion.intro();
+Motion.splash(() => Motion.intro());
